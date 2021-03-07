@@ -4,6 +4,10 @@ import json
 import requests
 # import dateutil.parser
 from datetime import datetime
+import websockets
+import asyncio
+# import pyodbc
+import nest_asyncio
 
 
 
@@ -14,14 +18,92 @@ class OrderZone:
         self.getAccessTokenStart()
 
         upResponse = self.userPrincipals()
-        print(upResponse)
-        self.requestDict(upResponse)
+        # print(upResponse)
+
+        self.connectWebSocket(upResponse)
+
 
 
         # self.getAccount()
         # self.placeOrder()
         # self.getOrders()
         # self.cancelOrder()
+
+    def connectWebSocket(self, upResponse):
+        # nest_asyncio.apply()
+        loginJson, dataJson = self.requestDict(upResponse)
+        loop = asyncio.get_event_loop()
+        connection = loop.run_until_complete(self.connect(upResponse))
+        tasks = [
+            asyncio.ensure_future(self.receiveMessage(connection)),
+            asyncio.ensure_future(self.sendMessage(loginJson)),
+            asyncio.ensure_future(self.receiveMessage(connection)),
+            asyncio.ensure_future(self.sendMessage(dataJson)),
+            asyncio.ensure_future(self.receiveMessage(connection))
+        ]
+
+        loop.run_until_complete(asyncio.wait(tasks))
+
+
+
+
+
+    async def connect(self, upResponse):
+        uri = "wss://" + upResponse['streamerInfo']['streamerSocketUrl'] + "/ws"
+
+        self.connection = await websockets.client.connect(uri)
+        if self.connection.open:
+            print("Connection established")
+            return self.connection
+
+    async def sendMessage(self, message):
+        await self.connection.send(message)
+
+    async def receiveMessage(self, connection):
+        while True:
+            try:
+                message = await connection.recv()
+                message_decoded = json.loads(message)
+                print(message_decoded)
+            except websockets.exceptions.ConnectionClosed:
+                print('Connection with server closed')
+                break
+
+    async def heartbeat(self, connection):
+        while True:
+            try:
+                await connection.send('ping')
+                await asyncio.sleep(5)
+            except websockets.exceptions.ConnectionClosed:
+                print('connection with server closed')
+                break
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -96,11 +178,11 @@ class OrderZone:
         }
 
 
+        # turn the dict to JSON string:
+        loginJson = json.dumps(loginCreds)
+        dataJson = json.dumps(dataRequest)
 
-
-
-
-
+        return loginJson, dataJson
 
 
     def tokenTimestamp(self, tokenTs):
