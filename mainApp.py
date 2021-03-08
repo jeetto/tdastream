@@ -1,4 +1,5 @@
 '''Import dependencies''' 
+from asyncio.tasks import ensure_future
 import urllib
 import json
 import requests
@@ -29,14 +30,19 @@ class OrderZone:
         # self.getOrders()
         # self.cancelOrder()
 
+
+
+
+
     def connectWebSocket(self, upResponse):
         # nest_asyncio.apply()
-        loginJson, dataJson = self.requestDict(upResponse)
+        loginJson, dataJson, qosJson = self.requestDict(upResponse)
         loop = asyncio.get_event_loop()
         connection = loop.run_until_complete(self.connect(upResponse))
         tasks = [
             asyncio.ensure_future(self.receiveMessage(connection)),
             asyncio.ensure_future(self.sendMessage(loginJson)),
+            asyncio.ensure_future(self.qosRequest(qosJson)),
             asyncio.ensure_future(self.receiveMessage(connection)),
             asyncio.ensure_future(self.sendMessage(dataJson)),
             asyncio.ensure_future(self.receiveMessage(connection))
@@ -45,6 +51,9 @@ class OrderZone:
         loop.run_until_complete(asyncio.wait(tasks))
 
 
+
+    async def qosRequest(self, message):
+        await self.connection.send(message)
 
 
 
@@ -58,6 +67,9 @@ class OrderZone:
 
     async def sendMessage(self, message):
         await self.connection.send(message)
+
+    # async def spxMessage(self, message):
+    #     await self.connection.send(message)
 
     async def receiveMessage(self, connection):
         while True:
@@ -153,25 +165,51 @@ class OrderZone:
         dataRequest = {
             "requests":[
                 {
-                    "service":"ACTIVES_NASDAQ",
+                    "service":"QUOTE",
                     "requestid":"1",
                     "command":"SUBS",
                     "account":upResponse['accounts'][0]['accountId'],
                     "source":upResponse['streamerInfo']['appId'],
                     "parameters":{
-                        "keys":"NASDAQ-60",
-                        "fields":"0,1"
+                        "keys":"$SPX.X",
+                        "fields":"0,1,2,3,4,5,6,7,8,11"
                     }
-                },
-                                {
-                    "service":"LEVELONE_FUTURES",
+                }
+                # {
+                #     "service":"ACTIVES_NASDAQ",
+                #     "requestid":"1",
+                #     "command":"SUBS",
+                #     "account":upResponse['accounts'][0]['accountId'],
+                #     "source":upResponse['streamerInfo']['appId'],
+                #     "parameters":{
+                #         "keys":"NASDAQ-60",
+                #         "fields":"0,1"
+                #     }
+                # },
+                #                 {
+                #     "service":"LEVELONE_FUTURES",
+                #     "requestid":"2",
+                #     "command":"SUBS",
+                #     "account":upResponse['accounts'][0]['accountId'],
+                #     "source":upResponse['streamerInfo']['appId'],
+                #     "parameters":{
+                #         "keys":"/ES",
+                #         "fields":"0,1,2,3,4"
+                #     }
+                # }
+            ]
+        }
+
+        qosRequest = {
+            "requests":[
+                {
+                    "service":"ADMIN",
+                    "command":"QOS",
                     "requestid":"2",
-                    "command":"SUBS",
                     "account":upResponse['accounts'][0]['accountId'],
                     "source":upResponse['streamerInfo']['appId'],
                     "parameters":{
-                        "keys":"/ES",
-                        "fields":"0,1,2,3,4"
+                        "qoslevel":"0"
                     }
                 }
             ]
@@ -181,8 +219,9 @@ class OrderZone:
         # turn the dict to JSON string:
         loginJson = json.dumps(loginCreds)
         dataJson = json.dumps(dataRequest)
+        qosJson = json.dumps(qosRequest)
 
-        return loginJson, dataJson
+        return loginJson, dataJson, qosJson
 
 
     def tokenTimestamp(self, tokenTs):
